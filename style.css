@@ -1,0 +1,119 @@
+/* Ästhetik: Streng monochrom und radikal reduziert. Schwarz, Weiss, Graustufen. */
+:root {
+    --bg-color: #000;
+    --indicator-color: #fff;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body, html {
+    width: 100%;
+    /* Exakt zugeschnitten für Mobile, Vollbild ohne störende UI */
+    height: 100%;
+    height: 100svh;
+    background-color: var(--bg-color);
+    overflow: hidden; /* Container übernimmt das Scrollen */
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    /* Verhindert Text-Selection und standard Touch-Callouts auf iOS */
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/* Snap-Scrolling Container */
+#video-container {
+    height: 100%;
+    width: 100%;
+    overflow-y: scroll;
+    scroll-snap-type: y mandatory;
+    scroll-behavior: smooth;
+    /* Verstecke Scrollbar */
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+}
+
+#video-container::-webkit-scrollbar {
+    display: none; /* Chrome, Safari and Opera */
+}
+
+/* Einzelnes Video Wrapper */
+.video-wrapper {
+    height: 100%;
+    width: 100%;
+    scroll-snap-align: start;
+    scroll-snap-stop: always;
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: #000;
+}
+
+/* Das Video selbst */
+video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover; /* Rahmenlos, füllt den Screen aus */
+    background-color: #000;
+    pointer-events: none; /* Klicks gehen an den Body durch */
+}
+
+/* Indikatoren (Minimalistisch, Geometrisch) */
+.indicator {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s ease-out;
+    z-index: 10;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 60px;
+    height: 60px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 50%;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+.indicator.show {
+    opacity: 1;
+}
+
+.indicator.hidden {
+    display: none;
+}
+
+/* Play Triangle */
+.triangle {
+    width: 0;
+    height: 0;
+    border-top: 12px solid transparent;
+    border-bottom: 12px solid transparent;
+    border-left: 20px solid var(--indicator-color);
+    margin-left: 6px; /* Optische Mitte */
+}
+
+/* Pause Bars */
+.bars {
+    width: 16px;
+    height: 24px;
+    position: relative;
+}
+.bars::before, .bars::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    width: 5px;
+    height: 100%;
+    background-color: var(--indicator-color);
+}
+.bars::before { left: 0; }
+.bars::after { right: 0; }
