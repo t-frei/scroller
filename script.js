@@ -4,9 +4,10 @@ const playIndicator = document.getElementById('play-indicator');
 const pauseIndicator = document.getElementById('pause-indicator');
 const progressBar = document.getElementById('progress-bar');
 const progressContainer = document.getElementById('progress-container');
-const bottomNav = document.getElementById('bottom-nav');
+const btnBurger = document.getElementById('btn-burger');
 const modalOverlay = document.getElementById('modal-overlay');
-const folderList = document.getElementById('folder-list');
+const menuContent = document.getElementById('menu-content');
+const modalTitle = document.getElementById('modal-title');
 
 let videoData = {}; // Speichert die Kategorien
 let currentCategory = null;
@@ -18,15 +19,19 @@ let intersectionObserver = null;
 let interactionStarted = false;
 let isScrubbing = false;
 
-// ---- Event Listener für UI (Bottom Bar & Modals & Progress) ----
+// ---- Event Listener für UI (Modals & Progress & Burger) ----
 document.addEventListener('DOMContentLoaded', init);
 
 document.body.addEventListener('click', handleGlobalTap);
 
-// Klicks auf Navbar und Menüs vom GlobalTap isolieren
+// Klicks auf Buttons/Menüs vom GlobalTap isolieren
 progressContainer.addEventListener('pointerdown', e => e.stopPropagation());
 progressContainer.addEventListener('click', e => e.stopPropagation());
-bottomNav.addEventListener('click', e => e.stopPropagation());
+btnBurger.addEventListener('click', e => {
+    e.stopPropagation();
+    openMainMenu();
+});
+
 modalOverlay.addEventListener('click', e => {
     e.stopPropagation();
     if(e.target === modalOverlay) {
@@ -38,13 +43,15 @@ document.getElementById('btn-close-modal').addEventListener('click', () => {
     modalOverlay.classList.add('hidden');
 });
 
-document.getElementById('btn-folders').addEventListener('click', () => {
-    document.getElementById('modal-title').textContent = 'Kategorien';
-    folderList.innerHTML = '';
+// Main Menu Logik
+function openMainMenu() {
+    modalTitle.textContent = 'Menü';
+    menuContent.innerHTML = '';
     
+    // Kategorien als Buttons einfügen
     Object.keys(videoData).forEach(cat => {
         const btn = document.createElement('button');
-        btn.className = 'folder-btn' + (cat === currentCategory ? ' active' : '');
+        btn.className = 'menu-btn' + (cat === currentCategory ? ' active' : '');
         btn.textContent = cat;
         btn.addEventListener('click', () => {
             if (cat !== currentCategory) {
@@ -53,17 +60,27 @@ document.getElementById('btn-folders').addEventListener('click', () => {
             }
             modalOverlay.classList.add('hidden');
         });
-        folderList.appendChild(btn);
+        menuContent.appendChild(btn);
     });
     
-    modalOverlay.classList.remove('hidden');
-});
+    // Trennlinie und Settings-Button
+    const divider = document.createElement('div');
+    divider.style.height = '1px';
+    divider.style.background = 'rgba(255,255,255,0.1)';
+    divider.style.margin = '15px 0';
+    menuContent.appendChild(divider);
 
-document.getElementById('btn-settings').addEventListener('click', () => {
-    document.getElementById('modal-title').textContent = 'Einstellungen';
-    folderList.innerHTML = '<p style="color:#888; font-size:0.9rem; line-height:1.4;">Aktuell gibt es hier keine spezifischen Einstellungen.<br><br>Version 1.0</p>';
+    const btnSettings = document.createElement('button');
+    btnSettings.className = 'menu-btn settings-btn';
+    btnSettings.textContent = 'Einstellungen';
+    btnSettings.addEventListener('click', () => {
+        modalTitle.textContent = 'Einstellungen';
+        menuContent.innerHTML = '<p style="color:#888; font-size:0.9rem; line-height:1.4;">Aktuell gibt es hier keine spezifischen Einstellungen.<br><br>Version 1.2</p>';
+    });
+    menuContent.appendChild(btnSettings);
+
     modalOverlay.classList.remove('hidden');
-});
+}
 
 // Scrubbing logik
 progressBar.addEventListener('input', () => {

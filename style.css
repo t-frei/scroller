@@ -2,7 +2,6 @@
 :root {
     --bg-color: #000;
     --indicator-color: #fff;
-    --nav-height: 55px; /* Höhe der unteren Menüleiste */
 }
 
 * {
@@ -22,11 +21,9 @@ body, html {
     user-select: none;
 }
 
-/* Snap-Scrolling Container - berücksichtigt nun das untere Menü! */
 #video-container {
     width: 100%;
-    /* Berechnet: Gesamter Screen minus Menüleiste und Safe Area (Home Balken), falls Menüleiste darüber sitzt */
-    height: calc(100dvh - var(--nav-height) - env(safe-area-inset-bottom, 0px));
+    height: 100dvh;
     overflow-y: scroll;
     scroll-snap-type: y mandatory;
     scroll-behavior: smooth;
@@ -58,10 +55,56 @@ video {
     pointer-events: none;
 }
 
+/* Gradient am unteren Rand fürs weiche Überblenden in Schwarz */
+#bottom-gradient {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 180px; /* Grosszügiger Übergang */
+    background: linear-gradient(to bottom, transparent 0%, #000 100%);
+    z-index: 5;
+    pointer-events: none;
+}
+
+/* Burger Menu Oben Rechts */
+.burger-menu {
+    position: fixed;
+    top: max(env(safe-area-inset-top), 20px);
+    right: 20px;
+    z-index: 30;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #fff;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    opacity: 0.6;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.2s;
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.burger-menu:active {
+    opacity: 1;
+    transform: scale(0.95);
+}
+
+.burger-menu svg {
+    width: 22px;
+    height: 22px;
+}
+
 /* Indicator Styling */
 .indicator {
     position: fixed;
-    top: 45%; /* Etwas höher wegen der unteren Bar */
+    top: 50%; 
     left: 50%;
     transform: translate(-50%, -50%);
     pointer-events: none;
@@ -96,54 +139,16 @@ video {
 .bars::before { left: 0; }
 .bars::after { right: 0; }
 
-/* Bottom Menu (Notch-Style) */
-#bottom-nav {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    width: 100%;
-    height: calc(var(--nav-height) + env(safe-area-inset-bottom, 0px));
-    background-color: #1a1a1c; /* Dunkles Grau wie gewünscht */
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-    display: flex;
-    justify-content: space-evenly;
-    align-items: center;
-    z-index: 30;
-    border-top: 1px solid rgba(255,255,255,0.05); /* Sehr subtile Trennlinie */
-}
-
-.nav-btn {
-    background: none;
-    border: none;
-    color: #fff;
-    opacity: 0.5;
-    padding: 10px 30px;
-    cursor: pointer;
-    transition: opacity 0.2s;
-    outline: none;
-    -webkit-tap-highlight-color: transparent;
-}
-
-.nav-btn:active {
-    opacity: 1;
-}
-
-.nav-btn svg {
-    width: 26px;
-    height: 26px;
-}
-
 /* Minimalistischer Progress-Bar (Scrubber) */
 #progress-container {
     position: fixed;
-    /* Sitzt exakt auf der oberen Kante des Bottom-Menüs */
-    bottom: calc(var(--nav-height) + env(safe-area-inset-bottom, 0px));
-    left: 0;
-    right: 0;
-    height: 20px; /* unsichtbare Touch-Area */
+    bottom: max(env(safe-area-inset-bottom), 25px); /* Sehr knapp über dem Rand platziert */
+    left: 20px;
+    right: 20px;
+    height: 20px; 
     z-index: 20;
     display: flex;
-    align-items: flex-end; /* Balken liegt ganz unten im Container an der Trennlinie an */
+    align-items: center;
 }
 
 #progress-bar {
@@ -159,22 +164,22 @@ video {
 #progress-bar::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 8px; /* Sehr dezenter Punkt */
+    width: 8px;
     height: 8px;
     border-radius: 50%;
     background: rgba(255, 255, 255, 0.85);
     cursor: pointer;
-    box-shadow: 0 0 4px rgba(0,0,0,1); 
-    transform: scale(1) translateY(-1px);
+    box-shadow: 0 0 6px rgba(0,0,0,1); 
+    transform: scale(1);
     transition: transform 0.2s ease;
 }
 
 #progress-bar::-webkit-slider-thumb:active {
-    transform: scale(1.8) translateY(-1px); 
+    transform: scale(1.8); 
     background: #fff;
 }
 
-/* UI Modals (Einstellungen & Ordner) */
+/* UI Modal (Einstellungen & Ordner Menu) */
 #modal-overlay {
     position: fixed;
     top: 0;
@@ -198,15 +203,15 @@ video {
 }
 
 .modal {
-    background: #1e1e1e;
+    background: #111;
     width: 85%;
     max-width: 320px;
     border-radius: 20px;
     padding: 24px;
     color: #fff;
     text-align: center;
-    box-shadow: 0 10px 40px rgba(0,0,0,0.6);
-    border: 1px solid rgba(255,255,255,0.05);
+    box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+    border: 1px solid rgba(255,255,255,0.08);
 }
 
 .modal h2 {
@@ -214,11 +219,12 @@ video {
     font-weight: 500;
     margin-bottom: 20px;
     letter-spacing: 0.5px;
+    color: #ccc;
 }
 
-.folder-btn {
+.menu-btn {
     width: 100%;
-    background: #2a2a2a;
+    background: #222;
     color: #eee;
     border: none;
     padding: 16px;
@@ -231,21 +237,31 @@ video {
     -webkit-tap-highlight-color: transparent;
 }
 
-.folder-btn.active {
+.menu-btn.active {
     background: #fff;
     color: #000;
     font-weight: 600;
 }
 
-.folder-btn:active {
+.menu-btn:active {
     transform: scale(0.98);
+}
+
+.settings-btn {
+    background: transparent;
+    border: 1px solid #444;
+    color: #888;
+}
+
+.settings-btn:active {
+    background: #222;
 }
 
 #btn-close-modal {
     margin-top: 15px;
     background: none;
     border: none;
-    color: #666;
+    color: #555;
     padding: 10px;
     font-size: 0.9rem;
     cursor: pointer;
