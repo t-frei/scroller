@@ -1,5 +1,11 @@
-[
-  "https://res.cloudinary.com/dtdtrjgcf/video/upload/v1773959286/IMG_9097_lhyq9d.mov",
-  "https://res.cloudinary.com/dtdtrjgcf/video/upload/v1773959291/20211231-010713-925_fr41lf.mov",
-  "https://res.cloudinary.com/dtdtrjgcf/video/upload/v1773959301/20220122-164415-822_rlainr.mov"
-]
+{
+  "Motivation": [
+    "https://res.cloudinary.com/dtdtrjgcf/video/upload/v1773959286/IMG_9097_lhyq9d.mov"
+  ],
+  "Natur": [
+    "https://res.cloudinary.com/dtdtrjgcf/video/upload/v1773959291/20211231-010713-925_fr41lf.mov"
+  ],
+  "Wissen": [
+    "https://res.cloudinary.com/dtdtrjgcf/video/upload/v1773959301/20220122-164415-822_rlainr.mov"
+  ]
+}

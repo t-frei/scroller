@@ -2,6 +2,7 @@
 :root {
     --bg-color: #000;
     --indicator-color: #fff;
+    --nav-height: 55px; /* Höhe der unteren Menüleiste */
 }
 
 * {
@@ -12,36 +13,31 @@
 
 body, html {
     width: 100%;
-    /* Exakt zugeschnitten für Mobile, Vollbild ohne störende UI */
     height: 100%;
-    height: 100dvh; /* dvh skaliert bis zum absolut echten Bildschirmrand ohne die 6mm Lücke */
-
     background-color: var(--bg-color);
-    overflow: hidden; /* Container übernimmt das Scrollen */
+    overflow: hidden; 
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    /* Verhindert Text-Selection und standard Touch-Callouts auf iOS */
     -webkit-touch-callout: none;
     -webkit-user-select: none;
     user-select: none;
 }
 
-/* Snap-Scrolling Container */
+/* Snap-Scrolling Container - berücksichtigt nun das untere Menü! */
 #video-container {
-    height: 100%;
     width: 100%;
+    /* Berechnet: Gesamter Screen minus Menüleiste und Safe Area (Home Balken), falls Menüleiste darüber sitzt */
+    height: calc(100dvh - var(--nav-height) - env(safe-area-inset-bottom, 0px));
     overflow-y: scroll;
     scroll-snap-type: y mandatory;
     scroll-behavior: smooth;
-    /* Verstecke Scrollbar */
-    -ms-overflow-style: none;  /* IE and Edge */
-    scrollbar-width: none;  /* Firefox */
+    -ms-overflow-style: none;
+    scrollbar-width: none;
 }
 
 #video-container::-webkit-scrollbar {
-    display: none; /* Chrome, Safari and Opera */
+    display: none;
 }
 
-/* Einzelnes Video Wrapper */
 .video-wrapper {
     height: 100%;
     width: 100%;
@@ -54,19 +50,18 @@ body, html {
     background-color: #000;
 }
 
-/* Das Video selbst */
 video {
     width: 100%;
     height: 100%;
-    object-fit: cover; /* Rahmenlos, füllt den Screen aus */
+    object-fit: cover;
     background-color: #000;
-    pointer-events: none; /* Klicks gehen an den Body durch */
+    pointer-events: none;
 }
 
-/* Indikatoren (Minimalistisch, Geometrisch) */
+/* Indicator Styling */
 .indicator {
     position: fixed;
-    top: 50%;
+    top: 45%; /* Etwas höher wegen der unteren Bar */
     left: 50%;
     transform: translate(-50%, -50%);
     pointer-events: none;
@@ -84,53 +79,71 @@ video {
     -webkit-backdrop-filter: blur(8px);
 }
 
-.indicator.show {
-    opacity: 1;
-}
+.indicator.show { opacity: 1; }
+.indicator.hidden { display: none; }
 
-.indicator.hidden {
-    display: none;
-}
-
-/* Play Triangle */
 .triangle {
     width: 0;
     height: 0;
     border-top: 12px solid transparent;
     border-bottom: 12px solid transparent;
     border-left: 20px solid var(--indicator-color);
-    margin-left: 6px; /* Optische Mitte */
+    margin-left: 6px;
 }
 
-/* Pause Bars */
-.bars {
-    width: 16px;
-    height: 24px;
-    position: relative;
-}
-.bars::before, .bars::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    width: 5px;
-    height: 100%;
-    background-color: var(--indicator-color);
-}
+.bars { width: 16px; height: 24px; position: relative; }
+.bars::before, .bars::after { content: ''; position: absolute; top: 0; width: 5px; height: 100%; background-color: var(--indicator-color); }
 .bars::before { left: 0; }
 .bars::after { right: 0; }
+
+/* Bottom Menu (Notch-Style) */
+#bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: calc(var(--nav-height) + env(safe-area-inset-bottom, 0px));
+    background-color: #1a1a1c; /* Dunkles Grau wie gewünscht */
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    display: flex;
+    justify-content: space-evenly;
+    align-items: center;
+    z-index: 30;
+    border-top: 1px solid rgba(255,255,255,0.05); /* Sehr subtile Trennlinie */
+}
+
+.nav-btn {
+    background: none;
+    border: none;
+    color: #fff;
+    opacity: 0.5;
+    padding: 10px 30px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.nav-btn:active {
+    opacity: 1;
+}
+
+.nav-btn svg {
+    width: 26px;
+    height: 26px;
+}
 
 /* Minimalistischer Progress-Bar (Scrubber) */
 #progress-container {
     position: fixed;
-    /* Nutzt SafeArea vom iPhone oder standardmässig 25px vom unteren Rand */
-    bottom: max(env(safe-area-inset-bottom), 25px); 
-    left: 20px;
-    right: 20px;
-    height: 30px; /* Grössere unsichtbare Touch-Area für besseres Greifen */
+    /* Sitzt exakt auf der oberen Kante des Bottom-Menüs */
+    bottom: calc(var(--nav-height) + env(safe-area-inset-bottom, 0px));
+    left: 0;
+    right: 0;
+    height: 20px; /* unsichtbare Touch-Area */
     z-index: 20;
     display: flex;
-    align-items: center;
-    opacity: 0.8;
+    align-items: flex-end; /* Balken liegt ganz unten im Container an der Trennlinie an */
 }
 
 #progress-bar {
@@ -138,24 +151,104 @@ video {
     appearance: none;
     width: 100%;
     height: 2px;
-    background: rgba(255, 255, 255, 0.2); /* Sehr feine, transluzente Linie */
+    background: rgba(255, 255, 255, 0.15);
     outline: none;
-    border-radius: 1px;
+    margin: 0;
 }
 
 #progress-bar::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 10px; /* Minimalistischer Punkt */
-    height: 10px;
+    width: 8px; /* Sehr dezenter Punkt */
+    height: 8px;
     border-radius: 50%;
-    background: #fff;
+    background: rgba(255, 255, 255, 0.85);
     cursor: pointer;
-    box-shadow: 0 0 6px rgba(0,0,0,0.8); /* Starker Kontrast für Sichtbarkeit */
-    transform: scale(1);
+    box-shadow: 0 0 4px rgba(0,0,0,1); 
+    transform: scale(1) translateY(-1px);
     transition: transform 0.2s ease;
 }
 
 #progress-bar::-webkit-slider-thumb:active {
-    transform: scale(1.6); /* Wird beim Anfassen organisch etwas grösser */
+    transform: scale(1.8) translateY(-1px); 
+    background: #fff;
+}
+
+/* UI Modals (Einstellungen & Ordner) */
+#modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.85);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    z-index: 50;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    opacity: 1;
+    transition: opacity 0.3s;
+}
+
+#modal-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.modal {
+    background: #1e1e1e;
+    width: 85%;
+    max-width: 320px;
+    border-radius: 20px;
+    padding: 24px;
+    color: #fff;
+    text-align: center;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+    border: 1px solid rgba(255,255,255,0.05);
+}
+
+.modal h2 {
+    font-size: 1.1rem;
+    font-weight: 500;
+    margin-bottom: 20px;
+    letter-spacing: 0.5px;
+}
+
+.folder-btn {
+    width: 100%;
+    background: #2a2a2a;
+    color: #eee;
+    border: none;
+    padding: 16px;
+    border-radius: 12px;
+    margin-bottom: 12px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background 0.2s;
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.folder-btn.active {
+    background: #fff;
+    color: #000;
+    font-weight: 600;
+}
+
+.folder-btn:active {
+    transform: scale(0.98);
+}
+
+#btn-close-modal {
+    margin-top: 15px;
+    background: none;
+    border: none;
+    color: #666;
+    padding: 10px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 1px;
 }

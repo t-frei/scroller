@@ -1,10 +1,15 @@
-// Konfiguration
 const VIDEOS_JSON_URL = 'videos.json';
 const container = document.getElementById('video-container');
 const playIndicator = document.getElementById('play-indicator');
 const pauseIndicator = document.getElementById('pause-indicator');
 const progressBar = document.getElementById('progress-bar');
 const progressContainer = document.getElementById('progress-container');
+const bottomNav = document.getElementById('bottom-nav');
+const modalOverlay = document.getElementById('modal-overlay');
+const folderList = document.getElementById('folder-list');
+
+let videoData = {}; // Speichert die Kategorien
+let currentCategory = null;
 
 let videosList = [];
 let globalAudioEnabled = false; // Standardmässig stumm
@@ -13,10 +18,54 @@ let intersectionObserver = null;
 let interactionStarted = false;
 let isScrubbing = false;
 
-// Verhindere Play/Pause Toggle beim Klick/Ziehen des Balkens
+// ---- Event Listener für UI (Bottom Bar & Modals & Progress) ----
+document.addEventListener('DOMContentLoaded', init);
+
+document.body.addEventListener('click', handleGlobalTap);
+
+// Klicks auf Navbar und Menüs vom GlobalTap isolieren
 progressContainer.addEventListener('pointerdown', e => e.stopPropagation());
 progressContainer.addEventListener('click', e => e.stopPropagation());
+bottomNav.addEventListener('click', e => e.stopPropagation());
+modalOverlay.addEventListener('click', e => {
+    e.stopPropagation();
+    if(e.target === modalOverlay) {
+        modalOverlay.classList.add('hidden');
+    }
+});
 
+document.getElementById('btn-close-modal').addEventListener('click', () => {
+    modalOverlay.classList.add('hidden');
+});
+
+document.getElementById('btn-folders').addEventListener('click', () => {
+    document.getElementById('modal-title').textContent = 'Kategorien';
+    folderList.innerHTML = '';
+    
+    Object.keys(videoData).forEach(cat => {
+        const btn = document.createElement('button');
+        btn.className = 'folder-btn' + (cat === currentCategory ? ' active' : '');
+        btn.textContent = cat;
+        btn.addEventListener('click', () => {
+            if (cat !== currentCategory) {
+                currentCategory = cat;
+                loadCategory(cat);
+            }
+            modalOverlay.classList.add('hidden');
+        });
+        folderList.appendChild(btn);
+    });
+    
+    modalOverlay.classList.remove('hidden');
+});
+
+document.getElementById('btn-settings').addEventListener('click', () => {
+    document.getElementById('modal-title').textContent = 'Einstellungen';
+    folderList.innerHTML = '<p style="color:#888; font-size:0.9rem; line-height:1.4;">Aktuell gibt es hier keine spezifischen Einstellungen.<br><br>Version 1.0</p>';
+    modalOverlay.classList.remove('hidden');
+});
+
+// Scrubbing logik
 progressBar.addEventListener('input', () => {
     isScrubbing = true;
     const wrapper = document.querySelector(`.video-wrapper[data-index="${currentlyPlayingIndex}"]`);
@@ -32,25 +81,43 @@ progressBar.addEventListener('change', () => {
     isScrubbing = false;
 });
 
-// Start: Fetch und Setup
+// ---- Kernlogik ----
 async function init() {
     try {
         const response = await fetch(VIDEOS_JSON_URL);
         if (!response.ok) throw new Error('Network response was not ok');
-        const data = await response.json();
+        videoData = await response.json();
         
-        if (Array.isArray(data) && data.length > 0) {
-            // Randomisiere das Array komplett für den Zufallsgenerator
-            videosList = data.sort(() => Math.random() - 0.5);
-            setupFeed();
+        const categories = Object.keys(videoData);
+        if (categories.length > 0) {
+            currentCategory = categories[0];
+            loadCategory(currentCategory);
         }
     } catch (e) {
         console.error('Fehler beim Laden von videos.json:', e);
     }
 }
 
+function loadCategory(category) {
+    if (!videoData[category] || videoData[category].length === 0) return;
+    
+    // Bestehenden Observer aufräumen
+    if (intersectionObserver) {
+        intersectionObserver.disconnect();
+    }
+    
+    // Alte Videos zerstören
+    container.innerHTML = '';
+    progressBar.value = 0;
+    
+    // Array für die neue Kategorie holen und komplett auf Zufall sortieren
+    videosList = [...videoData[category]].sort(() => Math.random() - 0.5);
+    currentlyPlayingIndex = 0;
+    
+    setupFeed();
+}
+
 function setupFeed() {
-    // Rendere Wrapper für alle Videos (Lazy Strategy)
     videosList.forEach((url, i) => {
         const wrapper = document.createElement('div');
         wrapper.className = 'video-wrapper';
@@ -58,22 +125,17 @@ function setupFeed() {
         container.appendChild(wrapper);
     });
 
-    // Observer für Sichtbarkeit (Snap Scrolling)
     const options = {
         root: container,
         rootMargin: '0px',
-        threshold: 0.6 // Ab 60% Sichtbarkeit gilt das Video als aktiv
+        threshold: 0.6
     };
 
     intersectionObserver = new IntersectionObserver(handleIntersection, options);
     
-    // Beobachte alle Wrapper
     document.querySelectorAll('.video-wrapper').forEach(wrapper => {
         intersectionObserver.observe(wrapper);
     });
-
-    // Tap Event für Audio und Play/Pause Toggle
-    document.body.addEventListener('click', handleGlobalTap);
 }
 
 function handleIntersection(entries) {
@@ -82,7 +144,6 @@ function handleIntersection(entries) {
         if (entry.isIntersecting) {
             currentlyPlayingIndex = index;
             loadAndPlayVideo(index, entry.target);
-            // Pre-load nächstes Video
             preloadVideo(index + 1);
         } else {
             pauseAndUnloadVideo(index, entry.target);
@@ -102,9 +163,8 @@ function loadAndPlayVideo(index, wrapper) {
     
     const playPromise = video.play();
     if (playPromise !== undefined) {
-        playPromise.catch(error => {
-            console.log('Autoplay prevented:', error);
-            // Browser zwingt uns, stumm zu starten, wenn keine User-Interaktion stattfand
+        playPromise.catch(() => {
+            // Auto-play prevented
         });
     }
 }
@@ -115,19 +175,17 @@ function pauseAndUnloadVideo(index, wrapper) {
         video.pause();
         video.removeAttribute('src'); 
         video.load();
-        wrapper.innerHTML = ''; // DOM aufräumen für minimalen RAM-Verbrauch
+        wrapper.innerHTML = ''; 
     }
 }
 
 function preloadVideo(index) {
-    // Falls Video-Liste zu Ende ist, wieder zum Anfang springen (Looping der ganzen Liste, falls gewünscht)
-    // Momentan stoppen wir einfach, oder endloses Anhängen (Endlosschleife)
     if (index >= videosList.length) return;
     
     const wrapper = document.querySelector(`.video-wrapper[data-index="${index}"]`);
     if (wrapper && !wrapper.querySelector('video')) {
         const video = createVideoElement(videosList[index]);
-        video.preload = 'auto'; // Hintergrund-Preloading erzwingen
+        video.preload = 'auto';
         wrapper.appendChild(video);
     }
 }
@@ -135,12 +193,11 @@ function preloadVideo(index) {
 function createVideoElement(src) {
     const video = document.createElement('video');
     video.src = src;
-    video.loop = true; // Endlosschleife pro Video
+    video.loop = true;
     video.playsInline = true;
     video.muted = !globalAudioEnabled;
-    video.preload = 'metadata'; // Spart Bandbreite
+    video.preload = 'metadata';
     
-    // Progress Bar ankoppeln
     video.addEventListener('timeupdate', () => {
         if (!isScrubbing && video.duration && !video.paused) {
             const wrapper = video.closest('.video-wrapper');
@@ -163,15 +220,13 @@ function showIndicator(type) {
     const ind = type === 'play' ? playIndicator : pauseIndicator;
     ind.classList.remove('hidden');
     
-    // Force reflow
-    void ind.offsetWidth;
-    
+    void ind.offsetWidth; // Force reflow
     ind.classList.add('show');
 
     clearTimeout(indicatorTimeout);
     indicatorTimeout = setTimeout(() => {
         ind.classList.remove('show');
-        setTimeout(() => ind.classList.add('hidden'), 200); // Warten auf Fade-out Timeout
+        setTimeout(() => ind.classList.add('hidden'), 200);
     }, 1000);
 }
 
@@ -182,7 +237,6 @@ function handleGlobalTap(e) {
     if (!video) return;
 
     if (!interactionStarted || !globalAudioEnabled) {
-        // Erster Tap: Aktiviere Ton global, Video spielt weiter.
         interactionStarted = true;
         globalAudioEnabled = true;
         document.querySelectorAll('video').forEach(v => v.muted = false);
@@ -190,7 +244,6 @@ function handleGlobalTap(e) {
         return;
     }
 
-    // Ab dem zweiten Tap: Play / Pause toggle
     if (video.paused) {
         video.play();
         showIndicator('play');
@@ -199,6 +252,3 @@ function handleGlobalTap(e) {
         showIndicator('pause');
     }
 }
-
-// Init App
-document.addEventListener('DOMContentLoaded', init);
