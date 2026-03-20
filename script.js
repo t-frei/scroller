@@ -3,12 +3,34 @@ const VIDEOS_JSON_URL = 'videos.json';
 const container = document.getElementById('video-container');
 const playIndicator = document.getElementById('play-indicator');
 const pauseIndicator = document.getElementById('pause-indicator');
+const progressBar = document.getElementById('progress-bar');
+const progressContainer = document.getElementById('progress-container');
 
 let videosList = [];
 let globalAudioEnabled = false; // Standardmässig stumm
 let currentlyPlayingIndex = 0;
 let intersectionObserver = null;
 let interactionStarted = false;
+let isScrubbing = false;
+
+// Verhindere Play/Pause Toggle beim Klick/Ziehen des Balkens
+progressContainer.addEventListener('pointerdown', e => e.stopPropagation());
+progressContainer.addEventListener('click', e => e.stopPropagation());
+
+progressBar.addEventListener('input', () => {
+    isScrubbing = true;
+    const wrapper = document.querySelector(`.video-wrapper[data-index="${currentlyPlayingIndex}"]`);
+    if(wrapper) {
+        const video = wrapper.querySelector('video');
+        if(video && video.duration) {
+            video.currentTime = (progressBar.value / 100) * video.duration;
+        }
+    }
+});
+
+progressBar.addEventListener('change', () => {
+    isScrubbing = false;
+});
 
 // Start: Fetch und Setup
 async function init() {
@@ -117,6 +139,17 @@ function createVideoElement(src) {
     video.playsInline = true;
     video.muted = !globalAudioEnabled;
     video.preload = 'metadata'; // Spart Bandbreite
+    
+    // Progress Bar ankoppeln
+    video.addEventListener('timeupdate', () => {
+        if (!isScrubbing && video.duration && !video.paused) {
+            const wrapper = video.closest('.video-wrapper');
+            if (wrapper && parseInt(wrapper.dataset.index) === currentlyPlayingIndex) {
+                progressBar.value = (video.currentTime / video.duration) * 100;
+            }
+        }
+    });
+
     return video;
 }
 
