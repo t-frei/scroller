@@ -18,6 +18,7 @@ let currentlyPlayingIndex = 0;
 let intersectionObserver = null;
 let interactionStarted = false;
 let isScrubbing = false;
+let currentUtterance = null;
 
 // ---- Event Listener für UI (Modals & Progress & Burger) ----
 document.addEventListener('DOMContentLoaded', init);
@@ -48,6 +49,32 @@ function openMainMenu() {
     modalTitle.textContent = 'Menü';
     menuContent.innerHTML = '';
     
+    // Topic Generator Input
+    const topicWrapper = document.createElement('div');
+    topicWrapper.className = 'topic-wrapper';
+    
+    const topicInput = document.createElement('input');
+    topicInput.type = 'text';
+    topicInput.id = 'new-topic-input';
+    topicInput.placeholder = 'Neues Thema (z.B. Rom)...';
+    
+    const btnGenerate = document.createElement('button');
+    btnGenerate.className = 'menu-btn';
+    btnGenerate.style.background = '#4CAF50'; // Green button to make it pop
+    btnGenerate.style.color = '#fff';
+    btnGenerate.textContent = 'Kategorie generieren';
+    btnGenerate.addEventListener('click', () => {
+        generateSmartCategory(topicInput.value);
+    });
+    
+    topicWrapper.appendChild(topicInput);
+    topicWrapper.appendChild(btnGenerate);
+    menuContent.appendChild(topicWrapper);
+
+    const divider0 = document.createElement('div');
+    divider0.className = 'menu-divider';
+    menuContent.appendChild(divider0);
+
     // Kategorien als Buttons einfügen
     Object.keys(videoData).forEach(cat => {
         const btn = document.createElement('button');
@@ -64,30 +91,121 @@ function openMainMenu() {
     });
     
     // Trennlinie und Settings-Button
-    const divider = document.createElement('div');
-    divider.style.height = '1px';
-    divider.style.background = 'rgba(255,255,255,0.1)';
-    divider.style.margin = '15px 0';
-    menuContent.appendChild(divider);
+    const divider1 = document.createElement('div');
+    divider1.className = 'menu-divider';
+    menuContent.appendChild(divider1);
 
     const btnSettings = document.createElement('button');
     btnSettings.className = 'menu-btn settings-btn';
     btnSettings.textContent = 'Einstellungen';
     btnSettings.addEventListener('click', () => {
         modalTitle.textContent = 'Einstellungen';
-        menuContent.innerHTML = '<p style="color:#888; font-size:0.9rem; line-height:1.4;">Aktuell gibt es hier keine spezifischen Einstellungen.<br><br>Version 1.2</p>';
+        menuContent.innerHTML = `
+            <div class="settings-group">
+                <label>Google Gemini API Key:</label>
+                <input type="password" id="gemini-key" value="${localStorage.getItem('gemini_key') || ''}">
+                <label>Unsplash Access Key:</label>
+                <input type="password" id="unsplash-key" value="${localStorage.getItem('unsplash_key') || ''}">
+                <button id="btn-save-keys" class="menu-btn" style="margin-top: 10px;">Speichern</button>
+            </div>
+            <button id="btn-back-settings" class="menu-btn settings-btn" style="margin-top:20px;">Zurück zum Menü</button>
+        `;
+        document.getElementById('btn-save-keys').addEventListener('click', () => {
+            localStorage.setItem('gemini_key', document.getElementById('gemini-key').value);
+            localStorage.setItem('unsplash_key', document.getElementById('unsplash-key').value);
+            alert('Gespeichert!');
+        });
+        document.getElementById('btn-back-settings').addEventListener('click', openMainMenu);
     });
     menuContent.appendChild(btnSettings);
 
     modalOverlay.classList.remove('hidden');
 }
 
-// Scrubbing logik
+// AI Fact Generation Logik
+async function generateSmartCategory(topic) {
+    if (!topic || topic.trim() === '') return;
+    
+    const geminiKey = localStorage.getItem('gemini_key');
+    const unsplashKey = localStorage.getItem('unsplash_key');
+    
+    if (!geminiKey || !unsplashKey) {
+        alert("Bitte hinterlege zuerst Google Gemini und Unsplash API Keys in den Einstellungen.");
+        return;
+    }
+
+    modalTitle.textContent = `Generiere "${topic}"...`;
+    menuContent.innerHTML = `
+        <div class="spinner-container">
+            <div class="spinner"></div>
+            <div class="loading-text">100 Fakten werden generiert...</div>
+        </div>
+    `;
+
+    try {
+        // 1. Fetch images from Unsplash
+        const unsplashRes = await fetch(`https://api.unsplash.com/search/photos?query=${encodeURIComponent(topic)}&order_by=popular&per_page=30`, {
+            headers: { 'Authorization': `Client-ID ${unsplashKey}` }
+        });
+        if (!unsplashRes.ok) throw new Error("Unsplash API Fehler: Bitte den Key prüfen.");
+        const unsplashData = await unsplashRes.json();
+        const images = unsplashData.results.map(r => r.urls.regular);
+        
+        if (images.length === 0) {
+            images.push('https://images.unsplash.com/photo-1506744626753-1fa44df31c82'); // minimal fallback
+        }
+
+        // 2. Fetch facts from Gemini
+        const prompt = `Generate exactly 100 distinct, short, and fascinating facts about '${topic}'. Return ONLY a valid JSON array of strings in English. Extremely important: Do not include markdown formatting like \`\`\`json or extra text, only the raw array [ "fact 1", "fact 2" ].`;
+        
+        const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }]
+            })
+        });
+        
+        const geminiData = await geminiRes.json();
+        if(geminiData.error) throw new Error("Gemini API Fehler: " + geminiData.error.message);
+        
+        let textContent = geminiData.candidates[0].content.parts[0].text.trim();
+        // Remove markdown block if Gemini still returns it
+        if (textContent.startsWith("\`\`\`json")) textContent = textContent.replace(/\`\`\`json/g, "");
+        if (textContent.startsWith("\`\`\`")) textContent = textContent.replace(/\`\`\`/g, "");
+        textContent = textContent.trim();
+        
+        const factsArray = JSON.parse(textContent);
+
+        // 3. Combine into playlist
+        const newCategoryList = factsArray.map((fact, index) => {
+            return {
+                type: 'ai-slide',
+                text: fact,
+                image: images[index % images.length] // loop through images
+            };
+        });
+
+        // 4. Update data and load
+        videoData[topic] = newCategoryList;
+        currentCategory = topic;
+        loadCategory(topic);
+        modalOverlay.classList.add('hidden');
+
+    } catch (e) {
+        console.error(e);
+        modalTitle.textContent = 'Fehler!';
+        menuContent.innerHTML = `<p style="color:#ff6b6b">${e.message}</p><button id="btn-back" class="menu-btn" style="margin-top:20px;">Zurück zum Menü</button>`;
+        document.getElementById('btn-back').addEventListener('click', openMainMenu);
+    }
+}
+
+// Scrubbing logik für Videos
 progressBar.addEventListener('input', () => {
     isScrubbing = true;
     const wrapper = document.querySelector(`.video-wrapper[data-index="${currentlyPlayingIndex}"]`);
     if(wrapper) {
-        const video = wrapper.querySelector('video');
+        const video = wrapper.querySelector('video.media-content');
         if(video && video.duration) {
             video.currentTime = (progressBar.value / 100) * video.duration;
         }
@@ -118,16 +236,14 @@ async function init() {
 function loadCategory(category) {
     if (!videoData[category] || videoData[category].length === 0) return;
     
-    // Bestehenden Observer aufräumen
     if (intersectionObserver) {
         intersectionObserver.disconnect();
     }
     
-    // Alte Videos zerstören
     container.innerHTML = '';
     progressBar.value = 0;
+    stopSpeech();
     
-    // Array für die neue Kategorie holen und komplett auf Zufall sortieren
     videosList = [...videoData[category]].sort(() => Math.random() - 0.5);
     currentlyPlayingIndex = 0;
     
@@ -160,72 +276,125 @@ function handleIntersection(entries) {
         const index = parseInt(entry.target.dataset.index);
         if (entry.isIntersecting) {
             currentlyPlayingIndex = index;
-            loadAndPlayVideo(index, entry.target);
-            preloadVideo(index + 1);
+            loadAndPlayMedia(index, entry.target);
+            preloadMedia(index + 1);
         } else {
-            pauseAndUnloadVideo(index, entry.target);
+            pauseAndUnloadMedia(index, entry.target);
         }
     });
 }
 
-function loadAndPlayVideo(index, wrapper) {
-    let video = wrapper.querySelector('video');
-    if (!video) {
-        video = createVideoElement(videosList[index]);
-        wrapper.appendChild(video);
-    }
-    
-    video.muted = !globalAudioEnabled;
-    video.currentTime = 0;
-    
-    const playPromise = video.play();
-    if (playPromise !== undefined) {
-        playPromise.catch(() => {
-            // Auto-play prevented
+// ----- Media Management (Videos + AI Slides) -----
+
+function createMediaElement(item) {
+    if (typeof item === 'string') {
+        const video = document.createElement('video');
+        video.src = item;
+        video.loop = true;
+        video.playsInline = true;
+        video.muted = !globalAudioEnabled;
+        video.preload = 'metadata';
+        video.className = 'media-content';
+        
+        video.addEventListener('timeupdate', () => {
+            if (!isScrubbing && video.duration && !video.paused) {
+                const wrapper = video.closest('.video-wrapper');
+                if (wrapper && parseInt(wrapper.dataset.index) === currentlyPlayingIndex) {
+                    progressBar.value = (video.currentTime / video.duration) * 100;
+                }
+            }
         });
+        return video;
+    } else if (item && item.type === 'ai-slide') {
+        const div = document.createElement('div');
+        div.className = 'ai-slide media-content';
+        div.dataset.type = 'ai-slide';
+        div.dataset.text = item.text;
+        
+        const img = document.createElement('img');
+        img.src = item.image;
+        
+        const overlay = document.createElement('div');
+        overlay.className = 'overlay';
+        
+        const textDiv = document.createElement('div');
+        textDiv.className = 'text';
+        textDiv.textContent = item.text;
+        
+        div.appendChild(img);
+        div.appendChild(overlay);
+        div.appendChild(textDiv);
+        
+        return div;
     }
 }
 
-function pauseAndUnloadVideo(index, wrapper) {
-    const video = wrapper.querySelector('video');
-    if (video) {
-        video.pause();
-        video.removeAttribute('src'); 
-        video.load();
+function speakText(text) {
+    if(!globalAudioEnabled) return;
+    window.speechSynthesis.cancel();
+    currentUtterance = new SpeechSynthesisUtterance(text);
+    currentUtterance.lang = 'en-US'; 
+    currentUtterance.rate = 0.95; // Slightly slower for better comprehension
+    
+    if(window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+    }
+    
+    window.speechSynthesis.speak(currentUtterance);
+}
+
+function stopSpeech() {
+    window.speechSynthesis.cancel();
+}
+
+function loadAndPlayMedia(index, wrapper) {
+    let media = wrapper.querySelector('.media-content');
+    if (!media) {
+        media = createMediaElement(videosList[index]);
+        wrapper.appendChild(media);
+    }
+    
+    if (media.tagName === 'VIDEO') {
+        progressContainer.style.display = 'flex'; // show scrubber
+        media.muted = !globalAudioEnabled;
+        media.currentTime = 0;
+        
+        const playPromise = media.play();
+        if (playPromise !== undefined) {
+            playPromise.catch(() => {});
+        }
+    } else if (media.dataset.type === 'ai-slide') {
+        progressContainer.style.display = 'none'; // hide scrubber for slides
+        speakText(media.dataset.text);
+    }
+}
+
+function pauseAndUnloadMedia(index, wrapper) {
+    const media = wrapper.querySelector('.media-content');
+    if (media) {
+        if (media.tagName === 'VIDEO') {
+            media.pause();
+            media.removeAttribute('src'); 
+            media.load();
+        } else if (media.dataset.type === 'ai-slide') {
+            stopSpeech();
+        }
         wrapper.innerHTML = ''; 
     }
 }
 
-function preloadVideo(index) {
+function preloadMedia(index) {
     if (index >= videosList.length) return;
     
     const wrapper = document.querySelector(`.video-wrapper[data-index="${index}"]`);
-    if (wrapper && !wrapper.querySelector('video')) {
-        const video = createVideoElement(videosList[index]);
-        video.preload = 'auto';
-        wrapper.appendChild(video);
+    if (wrapper && !wrapper.querySelector('.media-content')) {
+        const media = createMediaElement(videosList[index]);
+        if(media.tagName === 'VIDEO') media.preload = 'auto';
+        wrapper.appendChild(media);
     }
 }
 
-function createVideoElement(src) {
-    const video = document.createElement('video');
-    video.src = src;
-    video.loop = true;
-    video.playsInline = true;
-    video.muted = !globalAudioEnabled;
-    video.preload = 'metadata';
-    
-    video.addEventListener('timeupdate', () => {
-        if (!isScrubbing && video.duration && !video.paused) {
-            const wrapper = video.closest('.video-wrapper');
-            if (wrapper && parseInt(wrapper.dataset.index) === currentlyPlayingIndex) {
-                progressBar.value = (video.currentTime / video.duration) * 100;
-            }
-        }
-    });
-
-    return video;
-}
+// ------ Global Tap Handling ------
 
 let indicatorTimeout;
 function showIndicator(type) {
@@ -250,22 +419,41 @@ function showIndicator(type) {
 function handleGlobalTap(e) {
     const wrapper = document.querySelector(`.video-wrapper[data-index="${currentlyPlayingIndex}"]`);
     if (!wrapper) return;
-    const video = wrapper.querySelector('video');
-    if (!video) return;
+    const media = wrapper.querySelector('.media-content');
+    if (!media) return;
 
     if (!interactionStarted || !globalAudioEnabled) {
         interactionStarted = true;
         globalAudioEnabled = true;
         document.querySelectorAll('video').forEach(v => v.muted = false);
-        video.play();
+        
+        if (media.tagName === 'VIDEO') {
+            media.play();
+        } else if (media.dataset.type === 'ai-slide') {
+            speakText(media.dataset.text);
+        }
         return;
     }
 
-    if (video.paused) {
-        video.play();
-        showIndicator('play');
-    } else {
-        video.pause();
-        showIndicator('pause');
+    if (media.tagName === 'VIDEO') {
+        if (media.paused) {
+            media.play();
+            showIndicator('play');
+        } else {
+            media.pause();
+            showIndicator('pause');
+        }
+    } else if (media.dataset.type === 'ai-slide') {
+        if (window.speechSynthesis.paused) {
+            window.speechSynthesis.resume();
+            showIndicator('play');
+        } else if (window.speechSynthesis.speaking) {
+            window.speechSynthesis.pause();
+            showIndicator('pause');
+        } else {
+            // It finished reading, tap to restart the text
+            speakText(media.dataset.text);
+            showIndicator('play');
+        }
     }
 }
