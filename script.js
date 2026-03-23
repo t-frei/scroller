@@ -152,7 +152,10 @@ async function generateSmartCategory(topic) {
         const images = unsplashData.results.map(r => r.urls.regular);
         
         if (images.length === 0) {
-            images.push('https://images.unsplash.com/photo-1506744626753-1fa44df31c82'); // minimal fallback
+            for(let i=0; i<20; i++) {
+                // Fester Fallback pro Fakt, falls Unsplash null Treffer liefert
+                images.push(`https://picsum.photos/seed/${encodeURIComponent(topic)}${i}/1080/1920`);
+            }
         }
 
         // 2. Hole verfügbare Modelle dynamisch, falls das API-Konto limitierte Modelle hat
@@ -326,7 +329,13 @@ function createMediaElement(item) {
         div.dataset.text = item.text;
         
         const img = document.createElement('img');
+        img.crossOrigin = "anonymous";
         img.src = item.image;
+        // Wenn das Bild vom Browser geblockt wird oder offline ist, nutze ein Fallback
+        img.onerror = () => { 
+            img.onerror = null; // Verhindert endlos-Loops
+            img.src = `https://picsum.photos/seed/${Math.random()}/1080/1920`; 
+        };
         
         const overlay = document.createElement('div');
         overlay.className = 'overlay';
