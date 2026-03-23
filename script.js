@@ -161,9 +161,10 @@ async function generateSmartCategory(topic) {
         if (modelsData.error) throw new Error("API Key Fehler: " + modelsData.error.message);
         
         const modelOptions = modelsData.models.filter(m => m.supportedGenerationMethods && m.supportedGenerationMethods.includes("generateContent"));
-        const selectedModel = modelOptions.find(m => m.name.includes("gemini-1.5-flash")) || 
-                              modelOptions.find(m => m.name.includes("gemini-1.5-pro")) ||
-                              modelOptions.find(m => m.name.includes("gemini-pro")) || 
+        
+        // Suche bevorzugt nach "flash" Modellen (diese haben ein großes, gratis Kontingent)
+        const selectedModel = modelOptions.find(m => m.name.includes("-flash")) || 
+                              modelOptions.find(m => m.name.includes("-pro")) || 
                               modelOptions[0];
                               
         if (!selectedModel) throw new Error("Kein kompatibles Modell für die Text-Generierung gefunden.");
