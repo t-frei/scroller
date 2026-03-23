@@ -158,7 +158,7 @@ async function generateSmartCategory(topic) {
         // 2. Fetch facts from Gemini
         const prompt = `Generate exactly 100 distinct, short, and fascinating facts about '${topic}'. Return ONLY a valid JSON array of strings in English. Extremely important: Do not include markdown formatting like \`\`\`json or extra text, only the raw array [ "fact 1", "fact 2" ].`;
         
-        const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`, {
+        let geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${geminiKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -166,7 +166,21 @@ async function generateSmartCategory(topic) {
             })
         });
         
-        const geminiData = await geminiRes.json();
+        let geminiData = await geminiRes.json();
+
+        // Fallback falls gemini-1.5-flash-latest in der v1beta Region des Nutzers nicht verfügbar ist
+        if (geminiData.error && geminiData.error.code === 404) {
+            console.warn("Fallback to gemini-pro due to 404");
+            geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${geminiKey}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: prompt }] }]
+                })
+            });
+            geminiData = await geminiRes.json();
+        }
+        
         if(geminiData.error) throw new Error("Gemini API Fehler: " + geminiData.error.message);
         
         let textContent = geminiData.candidates[0].content.parts[0].text.trim();
