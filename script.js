@@ -126,8 +126,8 @@ function openMainMenu() {
 async function generateSmartCategory(topic) {
     if (!topic || topic.trim() === '') return;
     
-    const geminiKey = localStorage.getItem('gemini_key');
-    const unsplashKey = localStorage.getItem('unsplash_key');
+    const geminiKey = (localStorage.getItem('gemini_key') || '').trim();
+    const unsplashKey = (localStorage.getItem('unsplash_key') || '').trim();
     
     if (!geminiKey || !unsplashKey) {
         alert("Bitte hinterlege zuerst Google Gemini und Unsplash API Keys in den Einstellungen.");
@@ -155,10 +155,23 @@ async function generateSmartCategory(topic) {
             images.push('https://images.unsplash.com/photo-1506744626753-1fa44df31c82'); // minimal fallback
         }
 
-        // 2. Fetch facts from Gemini
+        // 2. Hole verfügbare Modelle dynamisch, falls das API-Konto limitierte Modelle hat
+        const modelsRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${geminiKey}`);
+        const modelsData = await modelsRes.json();
+        if (modelsData.error) throw new Error("API Key Fehler: " + modelsData.error.message);
+        
+        const modelOptions = modelsData.models.filter(m => m.supportedGenerationMethods && m.supportedGenerationMethods.includes("generateContent"));
+        const selectedModel = modelOptions.find(m => m.name.includes("gemini-1.5-flash")) || 
+                              modelOptions.find(m => m.name.includes("gemini-1.5-pro")) ||
+                              modelOptions.find(m => m.name.includes("gemini-pro")) || 
+                              modelOptions[0];
+                              
+        if (!selectedModel) throw new Error("Kein kompatibles Modell für die Text-Generierung gefunden.");
+
+        // 3. Fetch facts from Gemini mit dem gefundenen Modell
         const prompt = `Generate exactly 100 distinct, short, and fascinating facts about '${topic}'. Return ONLY a valid JSON array of strings in English. Extremely important: Do not include markdown formatting like \`\`\`json or extra text, only the raw array [ "fact 1", "fact 2" ].`;
         
-        let geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${geminiKey}`, {
+        const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${selectedModel.name}:generateContent?key=${geminiKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -166,21 +179,7 @@ async function generateSmartCategory(topic) {
             })
         });
         
-        let geminiData = await geminiRes.json();
-
-        // Fallback falls gemini-1.5-flash-latest in der v1beta Region des Nutzers nicht verfügbar ist
-        if (geminiData.error && geminiData.error.code === 404) {
-            console.warn("Fallback to gemini-pro due to 404");
-            geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${geminiKey}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: prompt }] }]
-                })
-            });
-            geminiData = await geminiRes.json();
-        }
-        
+        const geminiData = await geminiRes.json();
         if(geminiData.error) throw new Error("Gemini API Fehler: " + geminiData.error.message);
         
         let textContent = geminiData.candidates[0].content.parts[0].text.trim();
