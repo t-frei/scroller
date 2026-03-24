@@ -47,6 +47,81 @@ body, html {
     background-color: #000;
 }
 
+#video-container.hidden {
+    display: none;
+}
+
+/* --- Start Screen --- */
+#start-screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 60px 20px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.5s ease;
+}
+
+#start-screen.visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.logo {
+    color: #fff;
+    font-size: 2.5rem;
+    font-weight: 700;
+    letter-spacing: 2px;
+    margin-bottom: 40px;
+}
+
+.folder-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 20px;
+    width: 100%;
+    max-width: 600px;
+}
+
+.folder-card {
+    background: #111;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 16px;
+    padding: 20px 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform 0.2s, background 0.2s;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.folder-card:active {
+    transform: scale(0.95);
+    background: #222;
+}
+
+.folder-icon {
+    font-size: 2.5rem;
+    margin-bottom: 10px;
+}
+
+.folder-name {
+    color: #fff;
+    font-size: 0.9rem;
+    text-align: center;
+    word-break: break-word;
+}
+
+
 video {
     width: 100%;
     height: 100%;
@@ -291,6 +366,12 @@ video {
     filter: blur(5px);
     transform: scale(1.1); /* Hides blurred edges */
     z-index: 1;
+    animation: slowPan 15s infinite alternate ease-in-out;
+}
+
+@keyframes slowPan {
+    0% { transform: scale(1.1) translate(0, 0); }
+    100% { transform: scale(1.25) translate(-2%, 2%); }
 }
 
 .ai-slide .overlay {
