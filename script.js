@@ -1,7 +1,7 @@
 const VIDEOS_JSON_URL = 'videos.json';
 const container = document.getElementById('video-container');
 const startScreen = document.getElementById('start-screen');
-const folderGrid = document.getElementById('folder-grid');
+const folderList = document.getElementById('folder-list');
 const playIndicator = document.getElementById('play-indicator');
 const pauseIndicator = document.getElementById('pause-indicator');
 const progressBar = document.getElementById('progress-bar');
@@ -12,23 +12,25 @@ const menuContent = document.getElementById('menu-content');
 const modalTitle = document.getElementById('modal-title');
 
 let videoData = {}; // Speichert ALLE anzeigbaren Kategorien
-let defaultFolders = {}; // Speichert die originalen videos.json Kategorien
+let defaultFolders = {}; 
 let customFolders = JSON.parse(localStorage.getItem('scroller_custom_folders')) || {};
 let deletedFolders = JSON.parse(localStorage.getItem('scroller_deleted_folders')) || [];
 let folderIcons = JSON.parse(localStorage.getItem('scroller_folder_icons')) || {};
+let folderUsage = JSON.parse(localStorage.getItem('scroller_folder_usage')) || {};
 let unsavedCategories = [];
+let noBlurState = localStorage.getItem('scroller_no_blur') === 'true';
 
 let currentCategory = null;
+let currentDepth = 'normal';
 let videosList = [];
-let globalAudioEnabled = false; // Standardmässig stumm
+let globalAudioEnabled = false; 
 let currentlyPlayingIndex = 0;
 let intersectionObserver = null;
 let interactionStarted = false;
 let isScrubbing = false;
 let currentUtterance = null;
-let savePromptShown = false; // Verhindert, dass der Save-Prompt x-mal kommt
 
-// --- Utility: Emojis heuristisch wählen ---
+// --- Emojis & Settings ---
 const defaultIcons = {
     'Motivation': '🔥',
     'Natur': '🌿',
@@ -49,7 +51,6 @@ function setFolderIcon(name, newIcon) {
     localStorage.setItem('scroller_folder_icons', JSON.stringify(folderIcons));
 }
 
-// --- Speicher-Logik ---
 function saveCustomFolders() {
     localStorage.setItem('scroller_custom_folders', JSON.stringify(customFolders));
 }
@@ -57,7 +58,7 @@ function saveDeletedFolders() {
     localStorage.setItem('scroller_deleted_folders', JSON.stringify(deletedFolders));
 }
 
-// ---- Event Listener für UI (Modals & Progress & Burger) ----
+// ---- Event Listener für UI ----
 document.addEventListener('DOMContentLoaded', init);
 document.body.addEventListener('click', handleGlobalTap);
 
@@ -67,19 +68,14 @@ btnBurger.addEventListener('click', e => {
     e.stopPropagation();
     openMainMenu();
 });
-
 modalOverlay.addEventListener('click', e => {
     e.stopPropagation();
-    if(e.target === modalOverlay) {
-        modalOverlay.classList.add('hidden');
-    }
+    if(e.target === modalOverlay) modalOverlay.classList.add('hidden');
 });
-
 document.getElementById('btn-close-modal').addEventListener('click', () => {
     modalOverlay.classList.add('hidden');
 });
 
-// Modals generisch
 function showPromptModal(title, text, confirmBtnText, onConfirm) {
     modalTitle.textContent = title;
     menuContent.innerHTML = `
@@ -100,60 +96,65 @@ function showPromptModal(title, text, confirmBtnText, onConfirm) {
     });
 }
 
-function promptSaveUnsavedFolder(topic) {
-    if (!unsavedCategories.includes(topic)) return;
-    showPromptModal(
-        'Ordner speichern?',
-        `Du hast einige Fakten zu "${topic}" angesehen. Möchtest du diesen Ordner dauerhaft speichern?`,
-        'Speichern',
-        () => {
-            customFolders[topic] = videoData[topic];
+// Edit Folder Logic (Modal inside Menu)
+function showEditFolderModal(oldName) {
+    modalTitle.textContent = `Ordner bearbeiten`;
+    menuContent.innerHTML = `
+        <div class="settings-group">
+            <label>Name:</label>
+            <input type="text" id="edit-folder-name" value="${oldName}">
+            <label>Icon / Emoji:</label>
+            <input type="text" id="edit-folder-icon" value="${getFolderIcon(oldName)}">
+            <div style="display:flex; gap: 10px; margin-top: 15px;">
+                <button id="btn-save-edit" class="menu-btn" style="background:#4CAF50; color:#fff; flex:1;">Speichern</button>
+                <button id="btn-cancel-edit" class="menu-btn settings-btn" style="flex:1;">Abbrechen</button>
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('btn-save-edit').addEventListener('click', () => {
+        const newName = document.getElementById('edit-folder-name').value.trim();
+        const newIcon = document.getElementById('edit-folder-icon').value.trim();
+        if (!newName) return;
+        
+        if (newName !== oldName && videoData[newName]) {
+            alert("Ein Ordner mit diesem Namen existiert bereits.");
+            return;
+        }
+
+        // Apply Icon
+        if (newIcon) setFolderIcon(newName, newIcon);
+
+        // Apply Name
+        if (newName !== oldName) {
+            videoData[newName] = videoData[oldName];
+            delete videoData[oldName];
+
+            if (customFolders[oldName]) {
+                customFolders[newName] = customFolders[oldName];
+                delete customFolders[oldName];
+            } else if (defaultFolders[oldName]) {
+                customFolders[newName] = defaultFolders[oldName];
+                if (!deletedFolders.includes(oldName)) {
+                    deletedFolders.push(oldName);
+                    saveDeletedFolders();
+                }
+            }
             saveCustomFolders();
-            unsavedCategories = unsavedCategories.filter(c => c !== topic);
-            alert(`Ordner "${topic}" gespeichert!`);
+            
+            // Adjust usage stats
+            if (folderUsage[oldName]) {
+                folderUsage[newName] = folderUsage[oldName];
+                delete folderUsage[oldName];
+                localStorage.setItem('scroller_folder_usage', JSON.stringify(folderUsage));
+            }
+
+            if (currentCategory === oldName) currentCategory = newName;
         }
-    );
-    // Remove from unsaved list so we don't prompt again if cancelled
-    unsavedCategories = unsavedCategories.filter(c => c !== topic);
-}
-
-function renameFolder(oldName) {
-    const newName = prompt(`Neuer Name für "${oldName}":`, oldName);
-    if (!newName || newName.trim() === '' || newName === oldName) return;
-    
-    if (videoData[newName]) {
-        alert("Ein Ordner mit diesem Namen existiert bereits.");
-        return;
-    }
-
-    // Move data
-    videoData[newName] = videoData[oldName];
-    delete videoData[oldName];
-
-    // Handle Custom vs Default
-    if (customFolders[oldName]) {
-        customFolders[newName] = customFolders[oldName];
-        delete customFolders[oldName];
-    } else if (defaultFolders[oldName]) {
-        // Renaming a default folder makes it custom, and deletes it from default view
-        customFolders[newName] = defaultFolders[oldName];
-        if (!deletedFolders.includes(oldName)) {
-            deletedFolders.push(oldName);
-            saveDeletedFolders();
-        }
-    }
-    
-    saveCustomFolders();
-    
-    if (folderIcons[oldName]) {
-        setFolderIcon(newName, folderIcons[oldName]);
-    }
-    
-    if (currentCategory === oldName) {
-        currentCategory = newName;
-    }
-    
-    openMainMenu(); // Refresh UI
+        
+        openMainMenu();
+    });
+    document.getElementById('btn-cancel-edit').addEventListener('click', openMainMenu);
 }
 
 function deleteFolder(name) {
@@ -170,13 +171,12 @@ function deleteFolder(name) {
     }
     
     if (currentCategory === name) {
-        // Back to start screen if deleted the active one
         container.classList.add('hidden');
         container.innerHTML = '';
         buildStartScreen();
         modalOverlay.classList.add('hidden');
     } else {
-        openMainMenu(); // Refresh UI
+        openMainMenu(); 
     }
 }
 
@@ -188,7 +188,7 @@ function openMainMenu() {
     
     const btnHome = document.createElement('button');
     btnHome.className = 'menu-btn settings-btn';
-    btnHome.textContent = '🏠 Zurück zum Home Screen';
+    btnHome.textContent = '🏠 Zurück zur Startseite';
     btnHome.addEventListener('click', () => {
         modalOverlay.classList.add('hidden');
         pauseAndUnloadMedia(currentlyPlayingIndex, document.querySelector(`.video-wrapper[data-index="${currentlyPlayingIndex}"]`));
@@ -201,7 +201,6 @@ function openMainMenu() {
     divider0.className = 'menu-divider';
     menuContent.appendChild(divider0);
 
-    // Topic Generator Input
     const topicWrapper = document.createElement('div');
     topicWrapper.className = 'topic-wrapper';
     
@@ -226,9 +225,10 @@ function openMainMenu() {
     btnGenerate.className = 'menu-btn';
     btnGenerate.style.background = '#4CAF50';
     btnGenerate.style.color = '#fff';
-    btnGenerate.textContent = 'Generieren';
+    btnGenerate.textContent = 'Kategorie generieren';
     btnGenerate.addEventListener('click', () => {
-        generateSmartCategory(topicInput.value, depthSelect.value);
+        currentDepth = depthSelect.value;
+        generateSmartCategory(topicInput.value, currentDepth);
     });
     
     topicWrapper.appendChild(topicInput);
@@ -240,7 +240,7 @@ function openMainMenu() {
     divider1.className = 'menu-divider';
     menuContent.appendChild(divider1);
 
-    // Kategorien als Buttons einfügen mit Edit/Delete
+    // Folder Items
     Object.keys(videoData).forEach(cat => {
         const catRow = document.createElement('div');
         catRow.style.display = 'flex';
@@ -251,7 +251,7 @@ function openMainMenu() {
         btn.className = 'menu-btn' + (cat === currentCategory ? ' active' : '');
         btn.style.margin = '0';
         btn.style.flex = '1';
-        btn.textContent = cat;
+        btn.textContent = getFolderIcon(cat) + ' ' + cat;
         btn.addEventListener('click', () => {
             if (cat !== currentCategory) {
                 currentCategory = cat;
@@ -265,7 +265,7 @@ function openMainMenu() {
         btnEdit.style.width = '45px';
         btnEdit.style.margin = '0';
         btnEdit.textContent = '✏️';
-        btnEdit.addEventListener('click', () => renameFolder(cat));
+        btnEdit.addEventListener('click', () => showEditFolderModal(cat));
         
         const btnDelete = document.createElement('button');
         btnDelete.className = 'menu-btn settings-btn';
@@ -281,7 +281,6 @@ function openMainMenu() {
         menuContent.appendChild(catRow);
     });
     
-    // Trennlinie und Settings-Button
     const divider2 = document.createElement('div');
     divider2.className = 'menu-divider';
     menuContent.appendChild(divider2);
@@ -297,13 +296,20 @@ function openMainMenu() {
                 <input type="password" id="gemini-key" value="${localStorage.getItem('gemini_key') || ''}">
                 <label>Unsplash Access Key:</label>
                 <input type="password" id="unsplash-key" value="${localStorage.getItem('unsplash_key') || ''}">
-                <button id="btn-save-keys" class="menu-btn" style="margin-top: 10px;">Speichern</button>
+                <label style="display:flex; align-items:center; gap:10px; font-size: 0.95rem; margin-top:15px; cursor:pointer;">
+                    <input type="checkbox" id="no-blur-toggle" style="width:20px; margin:0;" ${noBlurState ? 'checked' : ''}>
+                    Blur-Effekt hinter Fakten ausschalten
+                </label>
+                <button id="btn-save-keys" class="menu-btn" style="margin-top: 20px;">Speichern</button>
             </div>
-            <button id="btn-back-settings" class="menu-btn settings-btn" style="margin-top:20px;">Zurück zum Menü</button>
+            <button id="btn-back-settings" class="menu-btn settings-btn" style="margin-top:10px;">Zurück zum Menü</button>
         `;
         document.getElementById('btn-save-keys').addEventListener('click', () => {
             localStorage.setItem('gemini_key', document.getElementById('gemini-key').value);
             localStorage.setItem('unsplash_key', document.getElementById('unsplash-key').value);
+            noBlurState = document.getElementById('no-blur-toggle').checked;
+            localStorage.setItem('scroller_no_blur', noBlurState ? 'true' : 'false');
+            document.body.classList.toggle('no-blur', noBlurState);
             alert('Gespeichert!');
         });
         document.getElementById('btn-back-settings').addEventListener('click', openMainMenu);
@@ -313,34 +319,25 @@ function openMainMenu() {
     modalOverlay.classList.remove('hidden');
 }
 
-
 // Start Screen
 function buildStartScreen() {
     startScreen.classList.add('visible');
-    folderGrid.innerHTML = '';
+    folderList.innerHTML = '';
     
-    const categories = Object.keys(videoData);
+    const categories = Object.keys(videoData).sort((a,b) => (folderUsage[b]||0) - (folderUsage[a]||0));
+    
     if(categories.length === 0) {
-        folderGrid.innerHTML = '<p style="color:#aaa;">Keine Ordner gefunden. Öffne das Menü, um KI-Themen zu generieren.</p>';
+        folderList.innerHTML = '<p style="color:#aaa;">Keine Ordner gefunden. Öffne das Menü, um KI-Themen zu generieren.</p>';
     }
     
-    categories.forEach(cat => {
+    categories.forEach((cat, index) => {
         const card = document.createElement('div');
         card.className = 'folder-card';
+        card.style.setProperty('--index', index);
         
         const iconWrapper = document.createElement('div');
         iconWrapper.className = 'folder-icon';
         iconWrapper.textContent = getFolderIcon(cat);
-        
-        // Icon click listener -> Change Icon
-        iconWrapper.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const newEmoji = prompt(`Neues Emoji für "${cat}":`, getFolderIcon(cat));
-            if (newEmoji && newEmoji.trim() !== '') {
-                setFolderIcon(cat, newEmoji.trim());
-                iconWrapper.textContent = newEmoji.trim();
-            }
-        });
         
         const nameDiv = document.createElement('div');
         nameDiv.className = 'folder-name';
@@ -354,13 +351,13 @@ function buildStartScreen() {
             loadCategory(cat);
         });
         
-        folderGrid.appendChild(card);
+        folderList.appendChild(card);
     });
 }
 
 
 // AI Fact Generation Logik
-async function generateSmartCategory(topic, depth) {
+async function generateSmartCategory(topic, depth, isAppending = false) {
     if (!topic || topic.trim() === '') return;
     
     const geminiKey = (localStorage.getItem('gemini_key') || '').trim();
@@ -371,7 +368,7 @@ async function generateSmartCategory(topic, depth) {
         return;
     }
 
-    modalTitle.textContent = `Generiere "${topic}"...`;
+    modalTitle.textContent = isAppending ? `Generiere mehr für "${topic}"...` : `Generiere "${topic}"...`;
     menuContent.innerHTML = `
         <div class="spinner-container">
             <div class="spinner"></div>
@@ -385,22 +382,24 @@ async function generateSmartCategory(topic, depth) {
         if (modelsData.error) throw new Error("API Key Fehler: " + modelsData.error.message);
         
         const modelOptions = modelsData.models.filter(m => m.supportedGenerationMethods && m.supportedGenerationMethods.includes("generateContent"));
-        
-        const selectedModel = modelOptions.find(m => m.name.includes("-flash")) || 
-                              modelOptions.find(m => m.name.includes("-pro")) || 
-                              modelOptions[0];
+        const selectedModel = modelOptions.find(m => m.name.includes("-flash")) || modelOptions.find(m => m.name.includes("-pro")) || modelOptions[0];
                               
         if (!selectedModel) throw new Error("Kein kompatibles Modell für die Text-Generierung gefunden.");
 
-        // Modified prompt for structural response
-        const prompt = `Generate EXACTLY 20 distinct, short, and fascinating facts about '${topic}'. The target audience has '${depth}' understanding, so cater the complexity to them. Return ONLY a valid JSON array of objects in English with this structure: {"fact": "the text of the fact", "image_query": "specific 1-2 word search keyword for unsplash relating purely to this fact"}. Extremely important: Do not include markdown formatting like \`\`\`json, only output the raw array [ {"fact": "...", "image_query": "..."} ].`;
+        let existingFacts = "";
+        if (isAppending && videoData[topic]) {
+            const facts = videoData[topic].filter(i => i.type === 'ai-slide').map(i => i.text);
+            if (facts.length > 0) {
+                existingFacts = ` DO NOT repeat any of these previously generated facts: ${JSON.stringify(facts)}.`;
+            }
+        }
+
+        const prompt = `Generate EXACTLY 20 distinct, short, and fascinating facts about '${topic}'. The target audience has '${depth}' understanding, so cater the complexity to them.${existingFacts} Return ONLY a valid JSON array of objects in English with this structure: {"fact": "the text of the fact", "image_query": "specific 1-2 word search keyword for unsplash relating purely to this fact"}. Extremely important: Do not include markdown formatting like \`\`\`json, only output the raw array [ {"fact": "...", "image_query": "..."} ].`;
         
         const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${selectedModel.name}:generateContent?key=${geminiKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }]
-            })
+            body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
         });
         
         const geminiData = await geminiRes.json();
@@ -409,12 +408,10 @@ async function generateSmartCategory(topic, depth) {
         let textContent = geminiData.candidates[0].content.parts[0].text.trim();
         if (textContent.startsWith("\`\`\`json")) textContent = textContent.replace(/\`\`\`json/g, "");
         if (textContent.startsWith("\`\`\`")) textContent = textContent.replace(/\`\`\`/g, "");
-        textContent = textContent.trim();
         
-        const factsArray = JSON.parse(textContent);
+        const factsArray = JSON.parse(textContent.trim());
 
-        // Combine into playlist (images will be fetched lazily)
-        const newCategoryList = factsArray.map((item) => {
+        const newSlides = factsArray.map((item) => {
             return {
                 type: 'ai-slide',
                 text: item.fact,
@@ -422,12 +419,19 @@ async function generateSmartCategory(topic, depth) {
             };
         });
 
-        // Update data and load
-        videoData[topic] = newCategoryList;
-        unsavedCategories.push(topic); // Mark as unsaved
-        currentCategory = topic;
-        
-        loadCategory(topic);
+        if (isAppending) {
+            videoData[topic] = videoData[topic].concat(newSlides);
+            customFolders[topic] = videoData[topic]; // Assuming it's already saved if we append
+            saveCustomFolders();
+            alert(`20 neue Fakten zu "${topic}" generiert!`);
+            currentCategory = topic;
+            loadCategory(topic);
+        } else {
+            videoData[topic] = newSlides;
+            unsavedCategories.push(topic);
+            currentCategory = topic;
+            loadCategory(topic);
+        }
         modalOverlay.classList.add('hidden');
 
     } catch (e) {
@@ -438,48 +442,27 @@ async function generateSmartCategory(topic, depth) {
     }
 }
 
-// Scrubbing logik für Videos
-progressBar.addEventListener('input', () => {
-    isScrubbing = true;
-    const wrapper = document.querySelector(`.video-wrapper[data-index="${currentlyPlayingIndex}"]`);
-    if(wrapper) {
-        const video = wrapper.querySelector('video.media-content');
-        if(video && video.duration) {
-            video.currentTime = (progressBar.value / 100) * video.duration;
-        }
-    }
-});
-
-progressBar.addEventListener('change', () => {
-    isScrubbing = false;
-});
-
 
 // ---- Kernlogik ----
 async function init() {
+    if(noBlurState) document.body.classList.add('no-blur');
+
     try {
         const response = await fetch(VIDEOS_JSON_URL);
         if (!response.ok) throw new Error('Network response was not ok');
         const jsonVideos = await response.json();
         defaultFolders = jsonVideos;
         
-        // Populate videoData: ignore deleted default folders, add custom folders
         for (let key in defaultFolders) {
-            if (!deletedFolders.includes(key)) {
-                videoData[key] = defaultFolders[key];
-            }
+            if (!deletedFolders.includes(key)) videoData[key] = defaultFolders[key];
         }
         for (let key in customFolders) {
             videoData[key] = customFolders[key];
         }
-        
         buildStartScreen();
     } catch (e) {
         console.error('Fehler beim Laden von videos.json:', e);
-        // If fetch fails, try to load offline custom folders
-        for (let key in customFolders) {
-            videoData[key] = customFolders[key];
-        }
+        for (let key in customFolders) videoData[key] = customFolders[key];
         buildStartScreen();
     }
 }
@@ -487,25 +470,39 @@ async function init() {
 function loadCategory(category) {
     if (!videoData[category] || videoData[category].length === 0) return;
     
+    // Usage stats tracking for sorting
+    folderUsage[category] = (folderUsage[category] || 0) + 1;
+    localStorage.setItem('scroller_folder_usage', JSON.stringify(folderUsage));
+    
     startScreen.classList.remove('visible');
     container.classList.remove('hidden');
     
-    if (intersectionObserver) {
-        intersectionObserver.disconnect();
-    }
+    if (intersectionObserver) intersectionObserver.disconnect();
     
     container.innerHTML = '';
     progressBar.value = 0;
-    savePromptShown = false;
     stopSpeech();
     
-    videosList = [...videoData[category]].sort(() => Math.random() - 0.5);
+    // Filter out previous special slides before mixing
+    let normalPosts = videoData[category].filter(i => typeof i === 'string' || (i.type === 'ai-slide'));
+    normalPosts = normalPosts.sort(() => Math.random() - 0.5);
+    
+    // Inject Save Prompt if unsaved, exactly at index 4 (so it's the 5th post)
+    if (unsavedCategories.includes(category) && normalPosts.length >= 4) {
+        normalPosts.splice(4, 0, { type: 'save-prompt' });
+    }
+    
+    // Inject Generate More Prompt at the very end if it contains ai-slides
+    const hasAiSlides = normalPosts.some(i => i.type && i.type === 'ai-slide');
+    if (hasAiSlides) {
+        normalPosts.push({ type: 'generate-more-prompt' });
+    }
+
+    videosList = normalPosts;
     currentlyPlayingIndex = 0;
     
     setupFeed();
     
-    // Always start at top when generating/reopening
-    // Use requestAnimationFrame to ensure scroll happens after DOM paint
     requestAnimationFrame(() => {
         container.scrollTo({top: 0, behavior: 'instant'});
     });
@@ -519,17 +516,9 @@ function setupFeed() {
         container.appendChild(wrapper);
     });
 
-    const options = {
-        root: container,
-        rootMargin: '0px',
-        threshold: 0.6
-    };
-
+    const options = { root: container, rootMargin: '0px', threshold: 0.6 };
     intersectionObserver = new IntersectionObserver(handleIntersection, options);
-    
-    document.querySelectorAll('.video-wrapper').forEach(wrapper => {
-        intersectionObserver.observe(wrapper);
-    });
+    document.querySelectorAll('.video-wrapper').forEach(w => intersectionObserver.observe(w));
 }
 
 function handleIntersection(entries) {
@@ -540,25 +529,13 @@ function handleIntersection(entries) {
             currentlyPlayingIndex = index;
             loadAndPlayMedia(index, entry.target);
             preloadMedia(index + 1);
-            
-            // Check if we hit the 5th post in an unsaved category
-            if (index === 4 && unsavedCategories.includes(currentCategory) && !savePromptShown) {
-                savePromptShown = true;
-                // Pause current playback to prompt
-                const media = entry.target.querySelector('.media-content');
-                if (media && media.tagName === 'VIDEO') media.pause();
-                if (media && media.dataset.type === 'ai-slide' && window.speechSynthesis.speaking) window.speechSynthesis.pause();
-                
-                promptSaveUnsavedFolder(currentCategory);
-            }
-            
         } else {
             pauseAndUnloadMedia(index, entry.target);
         }
     });
 }
 
-// ----- Media Management (Videos + AI Slides) -----
+// ----- Media Management (Videos + AI Slides + Action Slides) -----
 
 function createMediaElement(item) {
     if (typeof item === 'string') {
@@ -572,8 +549,8 @@ function createMediaElement(item) {
         
         video.addEventListener('timeupdate', () => {
             if (!isScrubbing && video.duration && !video.paused) {
-                const wrapper = video.closest('.video-wrapper');
-                if (wrapper && parseInt(wrapper.dataset.index) === currentlyPlayingIndex) {
+                const w = video.closest('.video-wrapper');
+                if (w && parseInt(w.dataset.index) === currentlyPlayingIndex) {
                     progressBar.value = (video.currentTime / video.duration) * 100;
                 }
             }
@@ -591,33 +568,19 @@ function createMediaElement(item) {
         const applyFallback = () => { img.src = `https://picsum.photos/seed/${encodeURIComponent(item.imageQuery || Math.random())}/1080/1920`; };
         const unsplashKey = localStorage.getItem('unsplash_key');
         
-        // Lazy fetch specific image from Unsplash if we have a key and query, and haven't fetched it yet
         if (item.image) {
-            img.src = item.image; // cached image
+            img.src = item.image;
         } else if (unsplashKey && item.imageQuery) {
-            // Placeholder while loading
-            img.src = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" fill="black"></svg>`;
-            
+            img.src = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" fill="gray"></svg>`;
             fetch(`https://api.unsplash.com/photos/random?query=${encodeURIComponent(item.imageQuery)}&orientation=portrait&client_id=${unsplashKey}`)
-            .then(r => {
-                if(!r.ok) throw new Error("Rate limit or not found");
-                return r.json();
-            })
+            .then(r => { if(!r.ok) throw new Error("Unsplash Fetch error"); return r.json(); })
             .then(data => {
                 img.src = data.urls.regular;
-                item.image = data.urls.regular; // cache the Unsplash URL in item for next loop iteration
-            }).catch(e => {
-                console.warn('Unsplash Fetch failed:', e);
-                applyFallback();
-            });
-        } else {
-            applyFallback();
-        }
+                item.image = data.urls.regular; 
+            }).catch(e => { applyFallback(); });
+        } else { applyFallback(); }
         
-        img.onerror = () => { 
-            img.onerror = null; // Verhindert endlos-Loops
-            applyFallback();
-        };
+        img.onerror = () => { img.onerror = null; applyFallback(); };
         
         const overlay = document.createElement('div');
         overlay.className = 'overlay';
@@ -631,8 +594,72 @@ function createMediaElement(item) {
         div.appendChild(textDiv);
         
         return div;
+    } else if (item && item.type === 'save-prompt') {
+        const div = document.createElement('div');
+        div.className = 'feed-action-slide media-content';
+        div.dataset.type = 'action';
+        // Random background for prompt
+        div.style.backgroundImage = `url('https://picsum.photos/seed/${Math.random()}/1080/1920?blur=4')`;
+        
+        div.innerHTML = `
+            <h2>Ordner speichern?<br><span style="font-size:1.2rem;font-weight:400;">Du bist beim 5. Post angekommen.</span></h2>
+            <button class="feed-action-btn" id="btn-save-inline">Ordner Speichern</button>
+            <button class="feed-action-btn secondary" id="btn-discard-inline">Nur weiter scrollen</button>
+        `;
+        
+        div.querySelector('#btn-save-inline').addEventListener('click', () => {
+            customFolders[currentCategory] = videoData[currentCategory];
+            saveCustomFolders();
+            unsavedCategories = unsavedCategories.filter(c => c !== currentCategory);
+            alert(`Ordner "${currentCategory}" gespeichert!`);
+            div.querySelector('#btn-save-inline').textContent = 'Gespeichert!';
+            div.querySelector('#btn-save-inline').disabled = true;
+        });
+
+        // Dummy listener for discard (visually does nothing, user just scrolls passing it)
+        div.querySelector('#btn-discard-inline').addEventListener('click', () => {
+            alert("Du kannst einfach weiter scrollen!");
+        });
+        
+        return div;
+    } else if (item && item.type === 'generate-more-prompt') {
+        const div = document.createElement('div');
+        div.className = 'feed-action-slide media-content';
+        div.dataset.type = 'action';
+        div.style.backgroundImage = `url('https://picsum.photos/seed/end/1080/1920?blur=4')`;
+        
+        div.innerHTML = `
+            <h2>Das war's vorerst für ${currentCategory}.</h2>
+            <button class="feed-action-btn" id="btn-gen-more">Mehr generieren</button>
+            <button class="feed-action-btn secondary" id="btn-go-home">Zur Startseite</button>
+        `;
+        
+        div.querySelector('#btn-gen-more').addEventListener('click', (e) => {
+            e.stopPropagation();
+            modalOverlay.classList.remove('hidden'); // Show overlay to block clicks during fetch
+            generateSmartCategory(currentCategory, currentDepth, true);
+        });
+        div.querySelector('#btn-go-home').addEventListener('click', (e) => {
+            e.stopPropagation();
+            container.classList.add('hidden');
+            pauseAndUnloadMedia(currentlyPlayingIndex, document.querySelector(`.video-wrapper[data-index="${currentlyPlayingIndex}"]`));
+            buildStartScreen();
+        });
+        
+        return div;
     }
 }
+
+// ... Scrubbing ...
+progressBar.addEventListener('input', () => {
+    isScrubbing = true;
+    const w = document.querySelector(`.video-wrapper[data-index="${currentlyPlayingIndex}"]`);
+    if(w) {
+        const video = w.querySelector('video.media-content');
+        if(video && video.duration) video.currentTime = (progressBar.value / 100) * video.duration;
+    }
+});
+progressBar.addEventListener('change', () => { isScrubbing = false; });
 
 function speakText(text) {
     if(!globalAudioEnabled) return;
@@ -640,17 +667,11 @@ function speakText(text) {
     currentUtterance = new SpeechSynthesisUtterance(text);
     currentUtterance.lang = 'en-US'; 
     currentUtterance.rate = 0.95;
-    
-    if(window.speechSynthesis.paused) {
-        window.speechSynthesis.resume();
-    }
-    
+    if(window.speechSynthesis.paused) window.speechSynthesis.resume();
     window.speechSynthesis.speak(currentUtterance);
 }
 
-function stopSpeech() {
-    window.speechSynthesis.cancel();
-}
+function stopSpeech() { window.speechSynthesis.cancel(); }
 
 function loadAndPlayMedia(index, wrapper) {
     let media = wrapper.querySelector('.media-content');
@@ -660,20 +681,17 @@ function loadAndPlayMedia(index, wrapper) {
     }
     
     if (media.tagName === 'VIDEO') {
-        progressContainer.style.display = 'flex'; // show scrubber
+        progressContainer.style.display = 'flex'; 
         media.muted = !globalAudioEnabled;
         media.currentTime = 0;
-        
         const playPromise = media.play();
-        if (playPromise !== undefined) {
-            playPromise.catch(() => {});
-        }
+        if (playPromise !== undefined) playPromise.catch(() => {});
     } else if (media.dataset.type === 'ai-slide') {
-        progressContainer.style.display = 'none'; // hide scrubber for slides
-        // Only speak if modal is closed (e.g. not blocked by save prompt)
-        if (modalOverlay.classList.contains('hidden')) {
-            speakText(media.dataset.text);
-        }
+        progressContainer.style.display = 'none'; 
+        if (modalOverlay.classList.contains('hidden')) speakText(media.dataset.text);
+    } else if (media.dataset.type === 'action') {
+        progressContainer.style.display = 'none'; 
+        stopSpeech();
     }
 }
 
@@ -693,16 +711,13 @@ function pauseAndUnloadMedia(index, wrapper) {
 
 function preloadMedia(index) {
     if (index >= videosList.length) return;
-    
-    const wrapper = document.querySelector(`.video-wrapper[data-index="${index}"]`);
-    if (wrapper && !wrapper.querySelector('.media-content')) {
+    const w = document.querySelector(`.video-wrapper[data-index="${index}"]`);
+    if (w && !w.querySelector('.media-content')) {
         const media = createMediaElement(videosList[index]);
         if(media.tagName === 'VIDEO') media.preload = 'auto';
-        wrapper.appendChild(media);
+        w.appendChild(media);
     }
 }
-
-// ------ Global Tap Handling ------
 
 let indicatorTimeout;
 function showIndicator(type) {
@@ -710,13 +725,10 @@ function showIndicator(type) {
     pauseIndicator.classList.remove('show');
     playIndicator.classList.add('hidden');
     pauseIndicator.classList.add('hidden');
-
     const ind = type === 'play' ? playIndicator : pauseIndicator;
     ind.classList.remove('hidden');
-    
-    void ind.offsetWidth; // Force reflow
+    void ind.offsetWidth; 
     ind.classList.add('show');
-
     clearTimeout(indicatorTimeout);
     indicatorTimeout = setTimeout(() => {
         ind.classList.remove('show');
@@ -725,10 +737,13 @@ function showIndicator(type) {
 }
 
 function handleGlobalTap(e) {
-    const wrapper = document.querySelector(`.video-wrapper[data-index="${currentlyPlayingIndex}"]`);
-    if (!wrapper) return;
-    const media = wrapper.querySelector('.media-content');
-    if (!media) return;
+    // Ignore taps on action slides
+    if (e.target.closest('.feed-action-slide')) return;
+
+    const w = document.querySelector(`.video-wrapper[data-index="${currentlyPlayingIndex}"]`);
+    if (!w) return;
+    const media = w.querySelector('.media-content');
+    if (!media || media.dataset.type === 'action') return;
 
     if (!interactionStarted || !globalAudioEnabled) {
         interactionStarted = true;
@@ -744,24 +759,11 @@ function handleGlobalTap(e) {
     }
 
     if (media.tagName === 'VIDEO') {
-        if (media.paused) {
-            media.play();
-            showIndicator('play');
-        } else {
-            media.pause();
-            showIndicator('pause');
-        }
+        if (media.paused) { media.play(); showIndicator('play'); }
+        else { media.pause(); showIndicator('pause'); }
     } else if (media.dataset.type === 'ai-slide') {
-        if (window.speechSynthesis.paused) {
-            window.speechSynthesis.resume();
-            showIndicator('play');
-        } else if (window.speechSynthesis.speaking) {
-            window.speechSynthesis.pause();
-            showIndicator('pause');
-        } else {
-            // It finished reading, tap to restart the text
-            speakText(media.dataset.text);
-            showIndicator('play');
-        }
+        if (window.speechSynthesis.paused) { window.speechSynthesis.resume(); showIndicator('play'); }
+        else if (window.speechSynthesis.speaking) { window.speechSynthesis.pause(); showIndicator('pause'); }
+        else { speakText(media.dataset.text); showIndicator('play'); }
     }
 }

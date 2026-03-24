@@ -15,8 +15,11 @@
 <body>
     <!-- Start Screen -->
     <div id="start-screen" class="visible">
-        <h1 class="logo">Scroller</h1>
-        <div id="folder-grid" class="folder-grid"></div>
+        <div class="start-header">
+            <div class="logo-placeholder">Logo</div>
+            <h1 class="logo-text">Scroller</h1>
+        </div>
+        <div id="folder-list" class="folder-list"></div>
     </div>
 
     <div id="video-container" class="hidden"></div>
@@ -26,9 +29,9 @@
 
     <!-- Burger Menu Oben Rechts -->
     <button id="btn-burger" class="burger-menu">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="3" y1="12" x2="21" y2="12"></line>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
             <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="12" x2="21" y2="12"></line>
             <line x1="3" y1="18" x2="21" y2="18"></line>
         </svg>
     </button>
